@@ -2,19 +2,38 @@ package org.example;
 
 import java.io.PrintStream;
 import java.io.UnsupportedEncodingException;
-import java.util.*;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 public class Main {
     static final int ROUTES_COUNT = 1000;
     static final char TARGET_CHAR = 'R';
     public static final Map<Integer, Integer> sizeToFreq = new HashMap<>();
 
-    public static void main(String[] args) throws UnsupportedEncodingException {
+    public static void main(String[] args) throws UnsupportedEncodingException, InterruptedException {
         System.setOut(new PrintStream(System.out, true, "UTF-8"));
 
         ExecutorService executor = Executors.newFixedThreadPool(ROUTES_COUNT);
+
+        Thread leaderFinderThread = new Thread(() -> {
+            while (!Thread.currentThread().isInterrupted()) {
+                synchronized (sizeToFreq) {
+                    try {
+                        sizeToFreq.wait();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                    findAndShowFrequency();
+                }
+            }
+        });
+        leaderFinderThread.start();
+
         for (int i = 0; i < ROUTES_COUNT; i++) {
             executor.submit(() -> {
                 String route = generateRoute("RLRFR", 100);
@@ -27,11 +46,18 @@ public class Main {
                     } else {
                         sizeToFreq.put(count, 1);
                     }
+                    sizeToFreq.notify();
                 }
             });
         }
         executor.shutdown();
-        findFrequencyAndShowStatistics();
+        executor.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
+
+        leaderFinderThread.interrupt();
+        leaderFinderThread.join();
+
+        findAndShowFrequency();
+        showStatistics();
     }
 
     private static int countChar(String route) {
@@ -53,7 +79,8 @@ public class Main {
         return route.toString();
     }
 
-    private static void findFrequencyAndShowStatistics() {
+    private static int findAndShowFrequency() {
+        if (sizeToFreq.isEmpty()) return 0;
         int mostFrequentKey = sizeToFreq.entrySet()
                 .stream()
                 .max(Map.Entry.comparingByValue())
@@ -63,6 +90,12 @@ public class Main {
         int mostFrequentValue = sizeToFreq.get(mostFrequentKey);
 
         System.out.println("Самое частое количество повторений " + mostFrequentKey + " (встретилось " + mostFrequentValue + " раз)");
+        return mostFrequentKey;
+    }
+
+    private static void showStatistics() {
+        System.out.println("------Финальная статистика------");
+        int mostFrequentKey = findAndShowFrequency();
         System.out.println("Другие размеры:");
 
         sizeToFreq.entrySet()
