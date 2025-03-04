@@ -13,6 +13,8 @@ public class Main {
     static final int ROUTES_COUNT = 1000;
     static final char TARGET_CHAR = 'R';
     public static final Map<Integer, Integer> sizeToFreq = new HashMap<>();
+    private static final Object lock = new Object();
+
 
     public static void main(String[] args) throws UnsupportedEncodingException, InterruptedException {
         System.setOut(new PrintStream(System.out, true, "UTF-8"));
@@ -21,9 +23,9 @@ public class Main {
 
         Thread leaderFinderThread = new Thread(() -> {
             while (!Thread.currentThread().isInterrupted()) {
-                synchronized (sizeToFreq) {
+                synchronized (lock) {
                     try {
-                        sizeToFreq.wait();
+                        lock.wait();
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
                         break;
@@ -46,7 +48,9 @@ public class Main {
                     } else {
                         sizeToFreq.put(count, 1);
                     }
-                    sizeToFreq.notify();
+                }
+                synchronized (lock) { // Отдельная синхронизация для уведомления потока-лидера
+                    lock.notify();
                 }
             });
         }
@@ -61,13 +65,9 @@ public class Main {
     }
 
     private static int countChar(String route) {
-        int count = 0;
-        for (int i = 0; i < route.length(); i++) {
-            if (route.charAt(i) == Main.TARGET_CHAR) {
-                count++;
-            }
-        }
-        return count;
+        return (int) route.chars()
+                .filter(ch -> ch == TARGET_CHAR)
+                .count();
     }
 
     public static String generateRoute(String letters, int length) {
@@ -81,30 +81,33 @@ public class Main {
 
     private static int findAndShowFrequency() {
         if (sizeToFreq.isEmpty()) return 0;
-        int mostFrequentKey = sizeToFreq.entrySet()
-                .stream()
-                .max(Map.Entry.comparingByValue())
-                .get()
-                .getKey();
+        synchronized (sizeToFreq) {
+            int mostFrequentKey = sizeToFreq.entrySet()
+                    .stream()
+                    .max(Map.Entry.comparingByValue())
+                    .get()
+                    .getKey();
 
-        int mostFrequentValue = sizeToFreq.get(mostFrequentKey);
+            int mostFrequentValue = sizeToFreq.get(mostFrequentKey);
 
-        System.out.println("Самое частое количество повторений " + mostFrequentKey + " (встретилось " + mostFrequentValue + " раз)");
-        return mostFrequentKey;
+            System.out.println("Самое частое количество повторений " + mostFrequentKey + " (встретилось " + mostFrequentValue + " раз)");
+            return mostFrequentKey;
+        }
     }
 
     private static void showStatistics() {
         System.out.println("------Финальная статистика------");
         int mostFrequentKey = findAndShowFrequency();
         System.out.println("Другие размеры:");
-
-        sizeToFreq.entrySet()
-                .stream()
-                .filter(entry -> entry.getKey() != mostFrequentKey)
-                .sorted((e1, e2) -> Integer.compare(e2.getValue(), e1.getValue()))
-                .forEach(entry ->
-                        System.out.println("- " + entry.getKey() + " (" + entry.getValue() + " раз)")
-                );
+        synchronized (sizeToFreq) {
+            sizeToFreq.entrySet()
+                    .stream()
+                    .filter(entry -> entry.getKey() != mostFrequentKey)
+                    .sorted((e1, e2) -> Integer.compare(e2.getValue(), e1.getValue()))
+                    .forEach(entry ->
+                            System.out.println("- " + entry.getKey() + " (" + entry.getValue() + " раз)")
+                    );
+        }
     }
 }
 
